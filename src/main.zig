@@ -16,12 +16,8 @@ pub fn main() !void {
     _ = try k.create_process("worker");
     _ = try k.create_process("shell");
 
-    if (k.find_process(2)) |process| {
-        std.debug.print(
-            "Found process: PID={}, state={}\n",
-            .{ process.pid, process.state },
-        );
-    }
+    const success = k.run_process(1);
+    std.debug.print("run P1: {}\n", .{success});
 
     k.print_processes();
 

@@ -48,6 +48,15 @@ pub const Kernel = struct {
         return null;
     }
 
+    pub fn run_process(self: *Kernel, pid: u32) bool {
+        const process = self.find_process(pid) orelse return false;
+        if (process.state != .ready) return false;
+
+        process.state = .running;
+
+        return true;
+    }
+
     pub fn print_processes(self: *Kernel) void {
         for (self.processes.items) |process| {
             std.debug.print(
