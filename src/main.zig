@@ -14,6 +14,14 @@ pub fn main() !void {
 
     _ = try k.create_process("shell");
     _ = try k.create_process("worker");
+    _ = try k.create_process("shell");
+
+    if (k.find_process(2)) |process| {
+        std.debug.print(
+            "Found process: PID={}, state={}\n",
+            .{ process.pid, process.state },
+        );
+    }
 
     k.print_processes();
 

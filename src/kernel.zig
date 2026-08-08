@@ -38,6 +38,16 @@ pub const Kernel = struct {
         return &self.processes.items[self.processes.items.len - 1];
     }
 
+    pub fn find_process(self: *Kernel, pid: u32) ?*Process {
+        for (self.processes.items) |*process| {
+            if (process.pid == pid) {
+                return process;
+            }
+        }
+
+        return null;
+    }
+
     pub fn print_processes(self: *Kernel) void {
         for (self.processes.items) |process| {
             std.debug.print(
