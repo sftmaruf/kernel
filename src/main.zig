@@ -12,12 +12,21 @@ pub fn main() !void {
     var k = Kernel.init(allocator);
     defer k.deinit();
 
-    _ = try k.create_process("shell");
-    _ = try k.create_process("worker");
-    _ = try k.create_process("shell");
+    try k.create_process("shell");
+    try k.create_process("worker");
+    try k.create_process("shell");
 
-    const success = k.run_process(1);
-    std.debug.print("run P1: {}\n", .{success});
+    const process = k.schedule_process();
+    if (process) |p| {
+        std.debug.print("Running PID: {}\n", .{p.pid});
+    }
+
+    k.terminate_process();
+
+    const process1 = k.schedule_process();
+    if (process1) |p1| {
+        std.debug.print("Running PID: {}\n", .{p1.pid});
+    }
 
     k.print_processes();
 

@@ -1,4 +1,5 @@
 const ProcessState = enum {
+    new,
     ready,
     running,
     blocked,

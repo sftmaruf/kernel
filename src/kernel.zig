@@ -8,12 +8,14 @@ pub const Kernel = struct {
     allocator: std.mem.Allocator,
     next_pid: u32,
     processes: std.ArrayList(Process),
+    current_process: ?u32,
 
     pub fn init(allocator: std.mem.Allocator) Kernel {
         return Kernel{
             .allocator = allocator,
             .next_pid = 1,
             .processes = .{},
+            .current_process = null,
         };
     }
 
@@ -21,7 +23,7 @@ pub const Kernel = struct {
         self.processes.deinit(self.allocator);
     }
 
-    pub fn create_process(self: *Kernel, name: []const u8) !*Process {
+    pub fn create_process(self: *Kernel, name: []const u8) !void {
         logger.info("Creating a process");
 
         const process = Process{
@@ -34,8 +36,6 @@ pub const Kernel = struct {
         self.next_pid += 1;
 
         logger.infof("Process created with id: {}\n", .{process.pid});
-
-        return &self.processes.items[self.processes.items.len - 1];
     }
 
     pub fn find_process(self: *Kernel, pid: u32) ?*Process {
@@ -55,6 +55,44 @@ pub const Kernel = struct {
         process.state = .running;
 
         return true;
+    }
+
+    // we are implementing a very simple scheduling mechanism,
+    // just schedule the next ready process
+    pub fn schedule_process(self: *Kernel) ?*Process {
+
+        // already one process running
+        if (self.current_process) |pid| {
+            return self.find_process(pid);
+        }
+
+        // find the next ready process
+        var next_ready_process: ?*Process = null;
+        for (self.processes.items) |*process| {
+            if (process.state == .ready) {
+                next_ready_process = process;
+                break;
+            }
+        }
+
+        // run the process and return
+        if (next_ready_process) |process| {
+            _ = self.run_process(process.pid);
+            self.current_process = process.pid;
+            return process;
+        }
+
+        return null;
+    }
+
+    pub fn terminate_process(self: *Kernel) void {
+        if (self.current_process) |pid| {
+            if (self.find_process(pid)) |p| {
+                p.state = .terminated;
+            }
+
+            self.current_process = null;
+        }
     }
 
     pub fn print_processes(self: *Kernel) void {
