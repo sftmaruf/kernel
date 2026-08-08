@@ -21,7 +21,15 @@ pub fn main() !void {
         std.debug.print("Running PID: {}\n", .{p.pid});
     }
 
-    k.terminate_process();
+    // instead of terminating the process. we are yielding.
+    // conceptually the process is signaling that it doesn't need the
+    // cpu time right now. so in the below part we called the schedular again
+    // which will give the cpu time to the next process following the round robin
+    // algorithm.
+    //
+    // real life kernel doesn't work in this way. they uses time sharing based schedular.
+    // we will eventually moved toward that later.
+    k.yield();
 
     const process1 = k.schedule_process();
     if (process1) |p1| {

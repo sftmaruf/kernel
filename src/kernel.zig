@@ -9,6 +9,8 @@ pub const Kernel = struct {
     next_pid: u32,
     processes: std.ArrayList(Process),
     current_process: ?u32,
+    // represent the next process which will get the cpu time
+    next_process_index: usize,
 
     pub fn init(allocator: std.mem.Allocator) Kernel {
         return Kernel{
@@ -16,6 +18,7 @@ pub const Kernel = struct {
             .next_pid = 1,
             .processes = .{},
             .current_process = null,
+            .next_process_index = 0,
         };
     }
 
@@ -57,29 +60,36 @@ pub const Kernel = struct {
         return true;
     }
 
-    // we are implementing a very simple scheduling mechanism,
-    // just schedule the next ready process
+    // we moved to a simple round robin based scheduler.
     pub fn schedule_process(self: *Kernel) ?*Process {
-
         // already one process running
         if (self.current_process) |pid| {
             return self.find_process(pid);
         }
 
-        // find the next ready process
-        var next_ready_process: ?*Process = null;
-        for (self.processes.items) |*process| {
-            if (process.state == .ready) {
-                next_ready_process = process;
-                break;
-            }
+        if (self.processes.items.len == 0) {
+            return null;
         }
 
-        // run the process and return
-        if (next_ready_process) |process| {
-            _ = self.run_process(process.pid);
-            self.current_process = process.pid;
-            return process;
+        const start = self.next_process_index;
+
+        while (true) {
+            if (self.processes.items.len <= self.next_process_index) {
+                self.next_process_index = 0;
+            }
+
+            const process = &self.processes.items[self.next_process_index];
+
+            self.next_process_index += 1;
+            const isRunning = self.run_process(process.pid);
+            if (isRunning) {
+                self.current_process = process.pid;
+                return process;
+            }
+
+            if (self.next_process_index == start) {
+                return null;
+            }
         }
 
         return null;
@@ -93,6 +103,21 @@ pub const Kernel = struct {
 
             self.current_process = null;
         }
+    }
+
+    // if the cpu time doesn't needed by a process.
+    // it will yield and return to ready state.
+    pub fn yield(self: *Kernel) void {
+        if (self.current_process == null) {
+            return;
+        }
+
+        const pid = self.current_process.?;
+        if (self.find_process(pid)) |process| {
+            process.state = .ready;
+        }
+
+        self.current_process = null;
     }
 
     pub fn print_processes(self: *Kernel) void {
