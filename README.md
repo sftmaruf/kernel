@@ -4,16 +4,19 @@ A minimal operating system kernel being written from scratch in [Zig](https://zi
 
 This is a **learning project** exploring how operating systems work by building one piece at a time. It currently implements a userspace simulation of process management and scheduling, and is being incrementally expanded toward a real kernel.
 
-> **Status:** Early prototype. The scheduler and process lifecycle run as a regular host executable today; booting, interrupts, and hardware interaction are not yet implemented.
+> **Status:** Tick-based simulation. The scheduler, process lifecycle, and per-process CPU accounting run as a regular host executable today; booting, interrupts, and hardware interaction are not yet implemented.
 
 ## Features
 
 - **Process model** with lifecycle states: `new`, `ready`, `running`, `blocked`, `terminated`
-- **Process creation** with automatic `pid` assignment (`src/kernel.zig:create_process`)
+- **Process creation** with automatic `pid` assignment and an `execution_time` budget (`src/kernel.zig:create_process`)
 - **Process lookup** by `pid` (`src/kernel.zig:find_process`)
 - **Round-robin scheduler** that cycles through ready processes and hands the CPU to the next runnable one (`src/kernel.zig:schedule_process`)
-- **Preemption-less yielding** — a running process can voluntarily return to the ready queue (`src/kernel.zig:yield`)
+- **Fixed 1-tick time slices** — `tick()` schedules when idle, runs the process for one tick, then rotates to the next (`src/kernel.zig:tick`)
+- **Per-process CPU accounting** — each tick decrements `remaining_time` and increments `cpu_time`; a process is terminated when its budget is exhausted (`src/kernel.zig:run_process`)
+- **Voluntary yield** — a running process can return to the ready queue early (`src/kernel.zig:yield`)
 - **Process termination** (`src/kernel.zig:terminate_process`)
+- **Saved CPU context** (`instruction_pointer`, `stack_pointer`, registers) per process, groundwork for future context switching (`src/cpu_context.zig`)
 - **Inspectable logging** that can be toggled at compile time (`src/helper/config.zig`)
 
 ## Requirements
@@ -28,26 +31,79 @@ zig build run
 
 This compiles and executes the demo in `src/main.zig`, which:
 
-1. Creates three processes (`shell`, `worker`, `shell`)
-2. Schedules the first runnable process
-3. Yields the running process back to the ready queue
-4. Schedules the next process (round-robin advances the cursor)
-5. Prints the final state of every process
+1. Creates three processes with varying execution budgets (`shell` 3 ticks, `worker` 2, `shell` 4)
+2. Simulates 10 CPU ticks, each calling `tick()` (schedule when idle, run for one tick, rotate)
+3. Terminates each process as its budget is exhausted
+4. Prints the final state of every process
 
-Example output:
+Example output (run with inspection logging enabled):
 
 ```
 Creating a process
 Process created with id: 1
+
 Creating a process
 Process created with id: 2
+
 Creating a process
 Process created with id: 3
-Running PID: 1
-Running PID: 2
-PID 1: shell [ready]
-PID 2: worker [running]
-PID 3: shell [ready]
+
+
+Instructed to schedule process
+PID: [1] scheduled. Transitioned [ready] to [running]
+Instructed to run the current process
+PID: [1] is executed from 1 tick, Remaining time: 2
+
+Instructed to schedule process
+PID: [2] scheduled. Transitioned [ready] to [running]
+Instructed to run the current process
+PID: [2] is executed from 1 tick, Remaining time: 1
+
+Instructed to schedule process
+PID: [3] scheduled. Transitioned [ready] to [running]
+Instructed to run the current process
+PID: [3] is executed from 1 tick, Remaining time: 3
+
+Instructed to schedule process
+PID: [1] scheduled. Transitioned [ready] to [running]
+Instructed to run the current process
+PID: [1] is executed from 1 tick, Remaining time: 1
+
+Instructed to schedule process
+PID: [2] scheduled. Transitioned [ready] to [running]
+Instructed to run the current process
+PID: [2] is executed from 1 tick, Remaining time: 0
+PID: [2] has terminated
+
+Instructed to schedule process
+PID: [3] scheduled. Transitioned [ready] to [running]
+Instructed to run the current process
+PID: [3] is executed from 1 tick, Remaining time: 2
+
+Instructed to schedule process
+PID: [1] scheduled. Transitioned [ready] to [running]
+Instructed to run the current process
+PID: [1] is executed from 1 tick, Remaining time: 0
+PID: [1] has terminated
+
+Instructed to schedule process
+PID: [3] scheduled. Transitioned [ready] to [running]
+Instructed to run the current process
+PID: [3] is executed from 1 tick, Remaining time: 1
+
+Instructed to schedule process
+PID: [3] scheduled. Transitioned [ready] to [running]
+Instructed to run the current process
+PID: [3] is executed from 1 tick, Remaining time: 0
+PID: [3] has terminated
+
+Instructed to schedule process
+No runnable processInstructed to run the current process
+
+Processes and their current status:
+PID 1: shell [terminated]
+PID 2: worker [terminated]
+PID 3: shell [terminated]
 ```
 
 ### Other commands
