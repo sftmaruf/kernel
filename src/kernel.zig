@@ -26,13 +26,23 @@ pub const Kernel = struct {
         self.processes.deinit(self.allocator);
     }
 
-    pub fn create_process(self: *Kernel, name: []const u8) !void {
+    pub fn create_process(self: *Kernel, name: []const u8, execution_time: usize) !void {
         logger.info("Creating a process");
 
         const process = Process{
             .pid = self.next_pid,
             .state = .ready,
             .name = name,
+
+            .cpu_time = 0,
+            .remaining_time = execution_time,
+
+            .context = .{
+                .instruction_pointer = 0,
+                .stack_pointer = 1000,
+                .register_a = 0,
+                .register_b = 0,
+            },
         };
 
         try self.processes.append(self.allocator, process);
@@ -51,48 +61,70 @@ pub const Kernel = struct {
         return null;
     }
 
-    pub fn run_process(self: *Kernel, pid: u32) bool {
-        const process = self.find_process(pid) orelse return false;
-        if (process.state != .ready) return false;
-
-        process.state = .running;
-
-        return true;
-    }
-
     // we moved to a simple round robin based scheduler.
-    pub fn schedule_process(self: *Kernel) ?*Process {
+    pub fn schedule_process(self: *Kernel) void {
+        logger.info("\nInstructed to schedule process");
+
         // already one process running
-        if (self.current_process) |pid| {
-            return self.find_process(pid);
+        if (self.current_process) |_| {
+            return;
         }
 
         if (self.processes.items.len == 0) {
-            return null;
+            return;
         }
 
-        const start = self.next_process_index;
+        const count = self.processes.items.len;
 
-        while (true) {
-            if (self.processes.items.len <= self.next_process_index) {
-                self.next_process_index = 0;
-            }
-
+        for (0..count) |_| {
             const process = &self.processes.items[self.next_process_index];
+            self.next_process_index = (self.next_process_index + 1) % count;
 
-            self.next_process_index += 1;
-            const isRunning = self.run_process(process.pid);
-            if (isRunning) {
+            if (process.state == .ready) {
+                process.state = .running;
                 self.current_process = process.pid;
-                return process;
-            }
 
-            if (self.next_process_index == start) {
-                return null;
+                logger.infof("PID: [{d}] scheduled. Transitioned [ready] to [running]", .{process.pid});
+
+                return;
             }
         }
 
-        return null;
+        std.debug.print("No runnable process", .{});
+    }
+
+    pub fn run_process(self: *Kernel) void {
+        logger.info("Instructed to run the current process");
+
+        if (self.current_process) |pid| {
+            const result = self.find_process(pid);
+
+            if (result == null) {
+                logger.infof("PID: [{d}] not found", .{pid});
+                return;
+            }
+
+            const process = result.?;
+
+            if (process.state != .running) {
+                logger.infof("Process [{d}] is not running", .{process.pid});
+                return;
+            }
+
+            if (process.remaining_time > 0) {
+                process.remaining_time -= 1;
+                process.cpu_time += 1;
+
+                logger.infof("PID: [{d}] is executed from 1 tick, Remaining time: {d}", .{ process.pid, process.remaining_time });
+            }
+
+            if (process.remaining_time == 0) {
+                process.state = .terminated;
+                self.current_process = null;
+
+                logger.infof("PID: [{d}] has terminated", .{process.pid});
+            }
+        }
     }
 
     pub fn terminate_process(self: *Kernel) void {
@@ -120,7 +152,22 @@ pub const Kernel = struct {
         self.current_process = null;
     }
 
+    // tick will schedule a process and give the process 1 tick process time
+    pub fn tick(self: *Kernel) void {
+        if (self.current_process == null) {
+            self.schedule_process();
+        }
+
+        self.run_process();
+
+        if (self.current_process != null) {
+            self.yield();
+        }
+    }
+
     pub fn print_processes(self: *Kernel) void {
+        std.debug.print("\nProcesses and their current status:\n", .{});
+
         for (self.processes.items) |process| {
             std.debug.print(
                 "PID {d}: {s} [{s}]\n",

@@ -12,31 +12,18 @@ pub fn main() !void {
     var k = Kernel.init(allocator);
     defer k.deinit();
 
-    try k.create_process("shell");
-    try k.create_process("worker");
-    try k.create_process("shell");
+    // think like the shell need 3 ticks to complete the process
+    // here ticks are for simulation in real life we don't know
+    // how much tick a process may need. Eventually we will get
+    // rid of it later.
+    try k.create_process("shell", 3);
+    try k.create_process("worker", 2);
+    try k.create_process("shell", 4);
 
-    const process = k.schedule_process();
-    if (process) |p| {
-        std.debug.print("Running PID: {}\n", .{p.pid});
-    }
-
-    // instead of terminating the process. we are yielding.
-    // conceptually the process is signaling that it doesn't need the
-    // cpu time right now. so in the below part we called the schedular again
-    // which will give the cpu time to the next process following the round robin
-    // algorithm.
-    //
-    // real life kernel doesn't work in this way. they uses time sharing based schedular.
-    // we will eventually moved toward that later.
-    k.yield();
-
-    const process1 = k.schedule_process();
-    if (process1) |p1| {
-        std.debug.print("Running PID: {}\n", .{p1.pid});
+    // here we are simulating total 10 CPU ticks
+    for (0..10) |_| {
+        k.tick();
     }
 
     k.print_processes();
-
-    // std.debug.print("Next PID: {}\n", .{k.next_pid});
 }
