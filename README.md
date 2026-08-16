@@ -21,7 +21,8 @@ This is a **learning project** exploring how operating systems work by building 
 
 ## Requirements
 
-- [Zig](https://ziglang.org/download/) **0.15.1** (or newer, per `minimum_zig_version` in `build.zig.zon`)
+- [Zig](https://ziglang.org/download/) **0.16.0** (or newer, per `minimum_zig_version` in `build.zig.zon`)
+- [Valgrind](https://valgrind.org/) (only for `zig build run-valgrind`)
 
 ## Building and running
 
@@ -113,6 +114,7 @@ PID 3: shell [terminated]
 | `zig build`          | Build the executable into `zig-out/bin/` |
 | `zig build test`      | Run the tests                           |
 | `zig build run`      | Build and run the demo                   |
+| `zig build run-valgrind` | Run the executable under valgrind's leak checker (requires valgrind) |
 
 ## Project structure
 

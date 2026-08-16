@@ -16,7 +16,7 @@ pub const Kernel = struct {
         return Kernel{
             .allocator = allocator,
             .next_pid = 1,
-            .processes = .{},
+            .processes = .empty,
             .current_process = null,
             .next_process_index = 0,
         };
