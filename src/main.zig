@@ -4,9 +4,8 @@ const kernel = @import("kernel.zig");
 const Kernel = kernel.Kernel;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
     const allocator = gpa.allocator();
 
     var k = Kernel.init(allocator);
