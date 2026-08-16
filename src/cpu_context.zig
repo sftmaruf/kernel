@@ -1,8 +1,10 @@
 pub const CpuContext = struct {
-    // represents next instruction cpu will execute
-    instruction_pointer: usize,
-    stack_pointer: usize,
+    pc: usize, // program counter
+    sp: usize, // stack pointer
 
-    register_a: usize,
-    register_b: usize,
+    // registers
+    r0: usize,
+    r1: usize,
+    r2: usize,
+    r3: usize,
 };

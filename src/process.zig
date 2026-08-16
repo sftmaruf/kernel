@@ -15,7 +15,7 @@ pub const Process = struct {
     // cpu time still required
     remaining_time: usize,
     // cpu time already consumed
-    cpu_time: usize,
+    quantum_used: usize,
 
     // save cpu context
     context: CpuContext,

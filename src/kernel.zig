@@ -1,24 +1,30 @@
 const std = @import("std");
 const process_ref = @import("process.zig");
 const logger = @import("helper/logger.zig");
+const cpu_ref = @import("hardware/cpu.zig");
 
+const CPU = cpu_ref.CPU;
 const Process = process_ref.Process;
 
 pub const Kernel = struct {
     allocator: std.mem.Allocator,
-    next_pid: u32,
     processes: std.ArrayList(Process),
-    current_process: ?u32,
+    next_pid: u32,
+    current_pid: ?u32,
     // represent the next process which will get the cpu time
     next_process_index: usize,
+    cpu: CPU,
+    quantum: usize,
 
     pub fn init(allocator: std.mem.Allocator) Kernel {
         return Kernel{
             .allocator = allocator,
             .next_pid = 1,
             .processes = .empty,
-            .current_process = null,
+            .current_pid = null,
             .next_process_index = 0,
+            .cpu = CPU.init(),
+            .quantum = 5,
         };
     }
 
@@ -26,7 +32,7 @@ pub const Kernel = struct {
         self.processes.deinit(self.allocator);
     }
 
-    pub fn create_process(self: *Kernel, name: []const u8, execution_time: usize) !void {
+    pub fn create_process(self: *Kernel, name: []const u8, cpu_burst: usize) !void {
         logger.info("Creating a process");
 
         const process = Process{
@@ -34,14 +40,16 @@ pub const Kernel = struct {
             .state = .ready,
             .name = name,
 
-            .cpu_time = 0,
-            .remaining_time = execution_time,
+            .quantum_used = 0,
+            .remaining_time = cpu_burst,
 
             .context = .{
-                .instruction_pointer = 0,
-                .stack_pointer = 1000,
-                .register_a = 0,
-                .register_b = 0,
+                .pc = self.next_pid * 100,
+                .sp = 1000,
+                .r0 = 0,
+                .r1 = 0,
+                .r2 = 0,
+                .r3 = 0,
             },
         };
 
@@ -62,11 +70,11 @@ pub const Kernel = struct {
     }
 
     // we moved to a simple round robin based scheduler.
-    pub fn schedule_process(self: *Kernel) void {
+    pub fn scheduleProcess(self: *Kernel) void {
         logger.info("\nInstructed to schedule process");
 
         // already one process running
-        if (self.current_process) |_| {
+        if (self.current_pid) |_| {
             return;
         }
 
@@ -82,9 +90,14 @@ pub const Kernel = struct {
 
             if (process.state == .ready) {
                 process.state = .running;
-                self.current_process = process.pid;
+                self.current_pid = process.pid;
+                process.quantum_used = 0;
+                self.cpu.restoreContext(process.context);
 
-                logger.infof("PID: [{d}] scheduled. Transitioned [ready] to [running]", .{process.pid});
+                logger.infof(
+                    "PID: [{d}] scheduled. Restoring PC: {d}. Transitioned [ready] to [running]",
+                    .{ process.pid, process.context.pc },
+                );
 
                 return;
             }
@@ -93,10 +106,10 @@ pub const Kernel = struct {
         std.debug.print("No runnable process", .{});
     }
 
-    pub fn run_process(self: *Kernel) void {
+    pub fn runProcess(self: *Kernel) void {
         logger.info("Instructed to run the current process");
 
-        if (self.current_process) |pid| {
+        if (self.current_pid) |pid| {
             const result = self.find_process(pid);
 
             if (result == null) {
@@ -112,66 +125,116 @@ pub const Kernel = struct {
             }
 
             if (process.remaining_time > 0) {
-                process.remaining_time -= 1;
-                process.cpu_time += 1;
+                self.cpu.executeInstruction();
 
-                logger.infof("PID: [{d}] is executed from 1 tick, Remaining time: {d}", .{ process.pid, process.remaining_time });
+                process.remaining_time -= 1;
+                process.quantum_used += 1;
+
+                logger.infof(
+                    "PID: [{d}] executed instruction. Next PC: {d}, Remaining time: {d}",
+                    .{
+                        process.pid,
+                        self.cpu.pc,
+                        process.remaining_time,
+                    },
+                );
             }
 
             if (process.remaining_time == 0) {
+                process.context = self.cpu.saveContext();
                 process.state = .terminated;
-                self.current_process = null;
+                self.current_pid = null;
 
                 logger.infof("PID: [{d}] has terminated", .{process.pid});
             }
         }
     }
 
-    pub fn terminate_process(self: *Kernel) void {
-        if (self.current_process) |pid| {
-            if (self.find_process(pid)) |p| {
-                p.state = .terminated;
+    pub fn terminateProcess(self: *Kernel) void {
+        if (self.current_pid) |pid| {
+            if (self.find_process(pid)) |process| {
+                process.context = self.cpu.saveContext();
+                process.state = .terminated;
             }
 
-            self.current_process = null;
+            self.current_pid = null;
         }
     }
 
     // if the cpu time doesn't needed by a process.
     // it will yield and return to ready state.
     pub fn yield(self: *Kernel) void {
-        if (self.current_process == null) {
+        if (self.current_pid == null) {
             return;
         }
 
-        const pid = self.current_process.?;
+        const pid = self.current_pid.?;
         if (self.find_process(pid)) |process| {
+            process.context = self.cpu.saveContext();
             process.state = .ready;
+
+            logger.infof(
+                "PID: [{d}] yielded. Saved PC: {d}",
+                .{
+                    process.pid,
+                    process.context.pc,
+                },
+            );
         }
 
-        self.current_process = null;
+        self.current_pid = null;
+    }
+
+    fn tryPreempt(self: *Kernel) void {
+        if (self.current_pid == null) return;
+
+        const current_process_id = self.current_pid.?;
+        const current_process_result = self.find_process(current_process_id);
+        if (current_process_result == null) return;
+
+        const current_process = current_process_result.?;
+        if (current_process.quantum_used >= self.quantum) {
+            current_process.context = self.cpu.saveContext();
+            current_process.state = .ready;
+            self.current_pid = null;
+
+            logger.infof(
+                "PID: [{d}] preempted. Saved PC: {d}",
+                .{
+                    current_process.pid,
+                    current_process.context.pc,
+                },
+            );
+        }
     }
 
     // tick will schedule a process and give the process 1 tick process time
     pub fn tick(self: *Kernel) void {
-        if (self.current_process == null) {
-            self.schedule_process();
+        if (self.current_pid == null) {
+            self.scheduleProcess();
         }
 
-        self.run_process();
+        self.runProcess();
 
-        if (self.current_process != null) {
-            self.yield();
-        }
+        self.tryPreempt();
+
+        // if (self.current_pid != null) {
+        //     self.yield();
+        // }
     }
 
-    pub fn print_processes(self: *Kernel) void {
+    pub fn printProcess(self: *Kernel) void {
         std.debug.print("\nProcesses and their current status:\n", .{});
 
         for (self.processes.items) |process| {
             std.debug.print(
-                "PID {d}: {s} [{s}]\n",
-                .{ process.pid, process.name, @tagName(process.state) },
+                "PID {d}: {s} [{s}] | PC: {d}\n",
+                .{
+                    process.pid,
+                    process.name,
+                    @tagName(process.state),
+                    process.context.pc,
+                },
             );
         }
     }
